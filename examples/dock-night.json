@@ -1,0 +1,11 @@
+{
+  "origin": {"latitude": 25.05, "longitude": 121.51},
+  "docks": [
+    {"id": "plaza", "latitude": 25.0501, "longitude": 121.5100, "freeDocks": 0,
+     "stop": "Market", "rideSeconds": 30, "returnAndWalkSeconds": 60},
+    {"id": "ferry", "latitude": 25.0507, "longitude": 121.5100, "freeDocks": 1,
+     "stop": "Studio", "rideSeconds": 90, "returnAndWalkSeconds": 90},
+    {"id": "market", "latitude": 25.0514, "longitude": 121.5100, "freeDocks": 3,
+     "stop": "Market", "rideSeconds": 180, "returnAndWalkSeconds": 480}
+  ]
+}

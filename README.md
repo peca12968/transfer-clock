@@ -36,6 +36,32 @@ python router.py examples/night.csv Studio Depot 24:22:59 --arrive-by
 
 第二條路在 Market 的到站時間是 24:07，能趕上 24:09 的接駁車，剛好符合兩分鐘的轉乘要求。若到站期限比接駁車的 24:23 提早一秒，就必須提早七分鐘從 Studio 搭車。結果包含實際出發和抵達時間。同一換車次數若有多條路同樣晚出發，回傳其中一條可行路線。
 
+## 先還共享單車，再搭夜班車
+
+從同一個騎車起點出發，最近的渡口站距離約 78 公尺，市場站約 156 公尺。23:54 從起點出發，市場站雖然較遠，還車後走到月台剛好趕上 00:05 快車，比在渡口站還車提早 11 分鐘抵達。使用 Python 3.12 和 .NET 10 SDK，從本專案目錄執行以下指令。
+
+```sh
+git clone https://github.com/peca12968/return-radius.git ../return-radius
+git -C ../return-radius checkout --detach a3d78f802b898eb6751a75ea5bb15a7b629648ff
+dotnet build ../return-radius/ReturnRadius.csproj -c Release
+python dock_trip.py examples/night.csv examples/dock-night.json Depot 23:54:00 --max-meters 180
+python dock_trip.py examples/night.csv examples/dock-night.json Depot 24:23:00 --max-meters 180 --needed 2 --arrive-by
+python dock_checks.py
+```
+
+| 條件 | 還車站與行程 | 從起點出發 | 到達 Depot |
+| --- | --- | --- | --- |
+| 一人，23:54 出發 | 市場站，搭 express | 23:54:00 | 24:12:00 |
+| 同樣條件，選最近的渡口站 | 渡口站，搭 feeder 再轉 shuttle | 23:54:00 | 24:23:00 |
+| 改為 23:54:01 出發 | 市場站，改搭 shuttle，渡口站已無可行班次 | 23:54:01 | 24:23:00 |
+| 兩人同站還車，24:23 前抵達 | 市場站，搭 shuttle | 最晚 23:58:00 | 24:23:00 |
+
+Return Radius 先以球面距離及空位查出半徑內的全部合格站點。每個站在輸入快照指定對應的上車站、從起點實際騎行的秒數 `rideSeconds`，以及停車、還車和走到上車站的合計秒數 `returnAndWalkSeconds`。空位使用快照當下的讀數，騎行與步行時間由呼叫端提供。[站點快照](examples/dock-night.json) · [Return Radius 固定版本](https://github.com/peca12968/return-radius/tree/a3d78f802b898eb6751a75ea5bb15a7b629648ff)
+
+正查從騎車出發時間加上兩段耗時，再向班表查詢。反查從最晚可上車時間扣除兩段耗時，取得最晚能從騎車起點出發的時間。輸出列出起點出發、到還車站、抵達上車站、最終到站時間與搭乘班次。每個還車站保留原路由器依轉乘次數提供的行程。跨站排序優先採最早抵達或最晚出發，同分依轉乘次數、距離與站點 ID 排序。若還車站旁就是目的站，可在還車步行後直接抵達。
+
+`eligibleDocks` 表示通過容量與半徑篩選的站數。晚到而錯過末班車時，此數字可能大於零但 `journeys` 為空。可用 `--radius-dll` 指定已建置的 ReturnRadius.dll 路徑。整合測試另用 120 份合成班表，對兩種查詢方向逐一窮舉比對候選順序。[查詢實作](dock_trip.py) · [跨專案測試](dock_checks.py)
+
 ## 使用自己的時刻表
 
 輸入為已篩出單一服務日班次的 CSV，使用 GTFS 的 `trip_id`、`stop_id`、`stop_sequence`、`arrival_time` 與 `departure_time` 欄位。時間需完整，可使用 24 點以上的小時數表示午夜後的班次。可選欄位 `pickup_type` 與 `drop_off_type` 接受空白、0 或 1，分別表示一般服務或禁止上下車。每一列以站點 ID 表示實際上下車位置。[GTFS Schedule 參考規格](https://gtfs.org/documentation/schedule/reference/#stop_timestxt)
