@@ -1,0 +1,17 @@
+name: Verify timetable journeys
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  route:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m unittest -v
+      - run: python router.py examples/night.csv Studio Depot 23:49:00

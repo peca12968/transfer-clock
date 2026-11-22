@@ -1,0 +1,34 @@
+# Transfer Clock｜夜班轉乘查詢
+
+晚班結束後，23:49 從 Studio 出發，直達車隔日 00:31 到 Depot。若接受一次換車，留兩分鐘在 Market 轉乘可以提早 19 分鐘抵達。把轉乘時間加長到四分鐘，工具會列出另一班接駁車，以及仍然可搭的直達車。
+
+## 重現查詢
+
+使用 Python 3.12 標準函式庫，在專案根目錄執行。
+
+```sh
+python router.py examples/night.csv Studio Depot 23:49:00 --change-seconds 120
+python router.py examples/night.csv Studio Depot 23:49:00 --change-seconds 240
+python -m unittest -v
+```
+
+| 在 Market 換車所需時間 | 直達到站 | 換一次車的最早到站 | 換乘班次 |
+| --- | --- | --- | --- |
+| 120 秒 | 24:31 | 24:12 | 24:05 的 express |
+| 240 秒 | 24:31 | 24:23 | 24:09 的 shuttle |
+
+班表還有一班 24:10 到站的 staff，但該班在 Market 禁止上車。輸出 JSON 保留每段的班次、上下車站、停靠序號與時間。無可行行程時回傳空陣列。可用 `--max-transfers 0` 單獨查詢直達行程。[合成班表](examples/night.csv)
+
+## 使用自己的時刻表
+
+輸入為已篩出單一服務日班次的 CSV，使用 GTFS 的 `trip_id`、`stop_id`、`stop_sequence`、`arrival_time` 與 `departure_time` 欄位。時間需完整，可使用 24 點以上的小時數表示午夜後的班次。可選欄位 `pickup_type` 與 `drop_off_type` 接受空白、0 或 1，分別表示一般服務或禁止上下車。每一列以站點 ID 表示實際上下車位置。[GTFS Schedule 參考規格](https://gtfs.org/documentation/schedule/reference/#stop_timestxt)
+
+本工具的模型是固定時刻、同站換車、統一轉乘秒數。匯入前需先處理營運日曆、預約班次、即時異動及額外轉乘限制；跨月台步行、站外轉乘與票價屬於範例以外的條件。
+
+## 如何驗證選到的路
+
+每一輪多搭一班車。演算法沿每班車的停靠順序掃描，只從上一輪可趕上的站點上車，並記下新抵達時間與搭乘來源。留在車上經過中途站時可直接續乘。只有比更少換車的行程還早到的結果才列入輸出。已排序的班表共 N 次停靠，最多換 K 次車的查詢最多掃描 (K+1)N 次停靠。[路線實作](router.py)
+
+測試另用窮舉逐一組合可行的上下車站，對照 300 份固定種子的合成班表，核對每種換車次數的到站結果，也從原始班表逐段檢查輸出的行程。另有同站重複停靠、同秒轉乘、跨午夜、禁止上車及班表錯誤案例。[測試](test_router.py)
+
+本作品使用 AI 輔助開發。所有站名與班次均為合成示範資料。
