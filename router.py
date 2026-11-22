@@ -1,4 +1,4 @@
-"""Find the earliest arrivals for each useful transfer count on one service day."""
+"""Find earliest arrivals or latest departures for each useful transfer count."""
 import argparse
 from collections import defaultdict
 import csv
@@ -27,6 +27,10 @@ class Call:
     sequence: int
     pickup: bool
     dropoff: bool
+
+    def reversed_at(self, horizon):
+        return Call(self.stop, horizon - self.departure, horizon - self.arrival,
+                    self.sequence, self.dropoff, self.pickup)
 
 
 def allowed(value):
@@ -73,8 +77,15 @@ class Leg:
     destination: str
     board_sequence: int
     exit_sequence: int
-    departure: str
-    arrival: str
+    departure: int
+    arrival: int
+
+    def reversed_at(self, horizon):
+        return Leg(self.trip, self.destination, self.origin, self.exit_sequence, self.board_sequence,
+                   horizon - self.arrival, horizon - self.departure)
+
+    def record(self):
+        return {**asdict(self), "departure": clock(self.departure), "arrival": clock(self.arrival)}
 
 
 @dataclass(frozen=True)
@@ -83,24 +94,19 @@ class Label:
     previous: "Label | None"
     leg: Leg | None
 
-    def journey(self):
+    def legs(self):
         legs = []
         label = self
         while label.leg is not None:
-            legs.append(asdict(label.leg))
+            legs.append(label.leg)
             label = label.previous
-        return {"arrival": clock(self.time), "transfers": max(0, len(legs) - 1), "legs": legs[::-1]}
+        return legs[::-1]
 
 
-def plan(trips, origin, destination, start, change_seconds, max_transfers):
-    if min(start, change_seconds, max_transfers) < 0:
-        raise ValueError("time, transfer allowance and transfer limit must be nonnegative")
-    stops = {call.stop for calls in trips.values() for call in calls}
-    if origin not in stops or destination not in stops:
-        raise ValueError("unknown origin or destination")
+def earliest_labels(trips, origin, destination, start, change_seconds, max_transfers):
     previous = {origin: Label(start, None, None)}
     if origin == destination:
-        return [previous[origin].journey()]
+        return [previous[origin]]
     best = {origin: start}
     journeys = []
     for ride in range(max_transfers + 1):
@@ -112,7 +118,7 @@ def plan(trips, origin, destination, start, change_seconds, max_transfers):
                 if boarding is not None and call.dropoff and (
                         call.stop not in best or call.arrival < best[call.stop]):
                     leg = Leg(trip, boarding.stop, call.stop, boarding.sequence, call.sequence,
-                              clock(boarding.departure), clock(call.arrival))
+                              boarding.departure, call.arrival)
                     current[call.stop] = Label(call.arrival, previous[boarding.stop], leg)
                     best[call.stop] = call.arrival
                 if boarding is None and call.pickup and call.stop in previous:
@@ -121,9 +127,35 @@ def plan(trips, origin, destination, start, change_seconds, max_transfers):
         if not current:
             break
         if destination in current:
-            journeys.append(current[destination].journey())
+            journeys.append(current[destination])
         previous = current
     return journeys
+
+
+def plan(trips, origin, destination, start, change_seconds, max_transfers, *, arrive_by=False):
+    if min(start, change_seconds, max_transfers) < 0:
+        raise ValueError("time, transfer allowance and transfer limit must be nonnegative")
+    stops = {call.stop for calls in trips.values() for call in calls}
+    if origin not in stops or destination not in stops:
+        raise ValueError("unknown origin or destination")
+    if arrive_by:
+        # In the mirrored timetable, the latest feasible departure becomes the earliest arrival.
+        horizon = max(start, max(calls[-1].departure for calls in trips.values() if calls))
+        trips = {trip: [c.reversed_at(horizon) for c in reversed(calls)] for trip, calls in trips.items()}
+        origin, destination = destination, origin
+        start = horizon - start
+    results = []
+    for label in earliest_labels(trips, origin, destination, start, change_seconds, max_transfers):
+        legs = label.legs()
+        if arrive_by:
+            legs = [leg.reversed_at(horizon) for leg in reversed(legs)]
+            departure = horizon - label.time
+            arrival = legs[-1].arrival if legs else departure
+            times = {"departure": clock(departure), "arrival": clock(arrival)}
+        else:
+            times = {"arrival": clock(label.time)}
+        results.append({**times, "transfers": max(0, len(legs)-1), "legs": [leg.record() for leg in legs]})
+    return results
 
 
 def main():
@@ -131,14 +163,15 @@ def main():
     parser.add_argument("stop_times", type=Path)
     parser.add_argument("origin")
     parser.add_argument("destination")
-    parser.add_argument("start")
+    parser.add_argument("time", help="earliest departure, or arrival deadline with --arrive-by")
+    parser.add_argument("--arrive-by", action="store_true", help="find the latest departures meeting the deadline")
     parser.add_argument("--change-seconds", type=int, default=120)
     parser.add_argument("--max-transfers", type=int, default=2)
     args = parser.parse_args()
     try:
         trips = read_calls(args.stop_times)
-        journeys = plan(trips, args.origin, args.destination, seconds(args.start),
-                        args.change_seconds, args.max_transfers)
+        journeys = plan(trips, args.origin, args.destination, seconds(args.time),
+                        args.change_seconds, args.max_transfers, arrive_by=args.arrive_by)
     except (OSError, ValueError, csv.Error) as error:
         parser.exit(1, f"{parser.prog}: {error}\n")
     print(json.dumps({"journeys": journeys}, indent=2))
