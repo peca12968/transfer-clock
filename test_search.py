@@ -107,12 +107,43 @@ class StationTests(unittest.TestCase):
             dict(stations=[item], queries=[query(0, 0), query(0, 0, limit=0)]),
             dict(stations=[item], queries=[{}]), dict(stations=[item], queries=[None]),
             dict(stations=[item], queries=[dict(query(0, 0), maxMeters=-1)]),
+            dict(stations=[], queries=[dict(query(0, 0), offlineMap={"maxZoom": 32, "tileBudget": 1})]),
+            dict(stations=[], queries=[dict(query(0, 0), offlineMap={"maxZoom": 8, "tileBudget": 0})]),
         ]:
             with self.subTest(invalid=invalid):
                 result = invoke(invalid)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(result.stdout, "")
                 self.assertTrue(result.stderr.strip())
+
+    def test_tile_windows_against_exhaustive_circular_starts(self):
+        rng = Random(712)
+        sites = [station(str(i), rng.uniform(-90, 90), rng.uniform(-180, 180), rng.randrange(5)) for i in range(60)]
+        queries = [dict(query(rng.uniform(-90, 90), rng.uniform(-180, 180), rng.randrange(1, 6), rng.randrange(1, 9)),
+                        offlineMap={"maxZoom": rng.randrange(1, 8), "tileBudget": rng.randrange(1, 32)}) for _ in range(80)]
+        by_id = {s["id"]: s for s in sites}
+        for q, result in zip(queries, search(sites, queries), strict=True):
+            locations = [q, *(by_id[m["id"]] for m in result["matches"])]
+            for z in range(q["offlineMap"]["maxZoom"], -1, -1):
+                n = 2**z
+                xs, ys = [], []
+                for location in locations:
+                    lat = math.radians(max(-85.0511287798066, min(85.0511287798066, location["latitude"])))
+                    xs.append(int((location["longitude"] + 180) / 360 * n) % n)
+                    ys.append(max(0, min(n - 1, math.floor((1 - math.log(math.tan(math.pi/4 + lat/2))/math.pi)/2*n))))
+                width, start = min((1 + max((x - s) % n for x in xs), s) for s in range(n))
+                height = max(ys) - min(ys) + 1
+                if width * height <= q["offlineMap"]["tileBudget"]:
+                    self.assertEqual(result["map"], {"zoom": z, "firstColumn": start, "columns": width,
+                                     "firstRow": min(ys), "rows": height, "tileCount": width * height})
+                    break
+
+    def test_poles_and_dateline_at_zoom_31(self):
+        opts = {"maxZoom": 31, "tileBudget": 1}
+        north, south = search([], [dict(query(lat, lon), offlineMap=opts) for lat, lon in ((90, 180), (-90, -180))])
+        for result, row in ((north, 0), (south, 2**31 - 1)):
+            self.assertEqual(result["map"], {"zoom": 31, "firstColumn": 0, "columns": 1,
+                             "firstRow": row, "rows": 1, "tileCount": 1})
 
 
 if __name__ == "__main__":

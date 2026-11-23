@@ -20,6 +20,24 @@ dotnet run -c Release -- examples/riverside.json
 
 ## 輸入與輸出
 
+### 四張圖磚能放進哪幾個還車站？
+
+查詢可加上 `"offlineMap":{"maxZoom":19,"tileBudget":4}`。工具先依空位、距離與筆數找出站點，再將查詢位置及入選站點投影到 XYZ 網格，找出預算內能完整覆蓋它們的最高整數縮放層級。預算單位是矩形內的圖磚數。沒有符合條件的站點時，仍可取得查詢位置所在的一張圖磚。
+
+執行 `dotnet bin/Release/net10.0/ReturnRadius.dll examples/dateline.json`。這次找到約 111 m 和 802 m 的兩座還車站，回傳第 16 層的 2 × 2 區塊。X 欄從 65535 接到 0，Y 列是 32767 與 32768。經度是環狀座標，取已占用欄位間最大的空隙並從另一側覆蓋，才能把換日線兩側相鄰站點放在一起。緯度投影截在 Web Mercator 的上下限，站點距離仍以原始球面座標計算。[範例輸入](examples/dateline.json) · [投影與圖磚網格](https://learn.microsoft.com/en-us/azure/azure-maps/zoom-levels-and-tile-grid)
+
+回傳的 `map` 包含 `zoom`、起始欄列、寬高與總張數。從 `firstColumn` 向東列舉時以 `2^zoom` 取模。80 組測試用另一種演算法枚舉所有可能起始欄及縮放層級，另測南北極與 ±180°。下列跨專案示範以 Tile Satchel 從 58,162 B 的合成封存檔發出 6 次區段請求，傳回 3,594 B 本文，並逐張核對 ZIP 裡的四份 PNG。
+
+```sh
+dotnet build -c Release
+git clone https://github.com/peca12968/tile-satchel.git ../tile-satchel
+git -C ../tile-satchel checkout 4d272a2ac74b37c777794bd418a8c9a3cb1ad9bc
+python -m pip install -r ../tile-satchel/requirements.txt
+python offline_demo.py ../tile-satchel
+```
+
+### 站點與查詢欄位
+
 輸入 JSON 包含 `stations` 與 `queries` 兩個陣列。一個程序建一次索引，依序回答整批查詢。
 
 - 站點提供唯一的 `id`、`latitude`、`longitude` 和非負整數 `freeDocks`。經緯度單位為度，緯度範圍為 −90 到 90，經度為 −180 到 180。

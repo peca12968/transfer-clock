@@ -1,9 +1,12 @@
 namespace ReturnRadius;
 
 public sealed record Station(string Id, double Latitude, double Longitude, int FreeDocks);
-public sealed record Query(double Latitude, double Longitude, int Needed, int Limit, double? MaxMeters = null);
+public sealed record Query(double Latitude, double Longitude, int Needed, int Limit, double? MaxMeters = null,
+    OfflineMap? OfflineMap = null);
 public sealed record Match(string Id, int FreeDocks, double Meters);
-public sealed record Result(IReadOnlyList<Match> Matches, int Visited);
+public sealed record Result(IReadOnlyList<Match> Matches, int Visited,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    TileWindow? Map = null);
 
 internal readonly record struct Point(double X, double Y, double Z)
 {
@@ -102,6 +105,7 @@ public sealed class StationIndex
         Search(root);
         var matches = best.Select(c => new Match(c.Entry.Station.Id, c.Entry.Station.FreeDocks,
             EarthRadiusMeters * c.Angle)).ToArray();
-        return new Result(matches, visited);
+        var map = query.OfflineMap is null ? null : TileWindow.Fit(query, best.Select(c => c.Entry.Station), query.OfflineMap);
+        return new Result(matches, visited, map);
     }
 }
