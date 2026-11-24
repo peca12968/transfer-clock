@@ -188,19 +188,17 @@ def boarding_times(labels, outgoing, default):
     return ready
 
 
-def earliest_labels(trips, origin, destination, start, change_seconds, max_transfers, transfers=None):
-    previous = {origin: Label(start, None, None)}
-    if origin == destination:
-        return [previous[origin]]
-    # Returning to the origin can enable a walk that is available only between rides.
-    best = {} if transfers else {origin: start}
+def scan_labels(trips, starts, change_seconds, max_transfers, transfers, *, earlier=None):
+    previous = {stop: Label(time, None, None) for stop, time in starts.items()}
+    best = dict(earlier or {})
     outgoing = defaultdict(dict)
     for (from_stop, to_stop), minimum in (transfers or {}).items():
         outgoing[from_stop][to_stop] = minimum
-    journeys = []
     for ride in range(max_transfers + 1):
         current = {}
-        ready = boarding_times(previous, outgoing, change_seconds) if ride else {origin: (start, previous[origin])}
+        ready = boarding_times(previous, outgoing, change_seconds) if ride else {
+            stop: (label.time, label) for stop, label in previous.items()
+        }
         for trip, calls in trips.items():
             boarding = None
             for call in calls:
@@ -217,10 +215,18 @@ def earliest_labels(trips, origin, destination, start, change_seconds, max_trans
                         boarding = call, preceding
         if not current:
             break
-        if destination in current:
-            journeys.append(current[destination])
+        yield current
         previous = current
-    return journeys
+
+
+def earliest_labels(trips, origin, destination, start, change_seconds, max_transfers, transfers=None):
+    if origin == destination:
+        return [Label(start, None, None)]
+    # Returning to the origin can enable a walk available only between rides.
+    earlier = {} if transfers else {origin: start}
+    return [labels[destination] for labels in scan_labels(
+        trips, {origin: start}, change_seconds, max_transfers, transfers, earlier=earlier
+    ) if destination in labels]
 
 
 def connection_details(legs, transfers, change_seconds):
@@ -234,6 +240,15 @@ def connection_details(legs, transfers, change_seconds):
                             "arrival": clock(before.arrival), "ready": clock(ready), "departure": clock(after.departure),
                             "minimum_seconds": minimum, "slack_seconds": after.departure - ready})
     return connections
+
+
+def reverse_timetable(trips, transfers, time):
+    # Along the reversed time axis, the latest departure is the earliest arrival.
+    last_departure = max((calls[-1].departure for calls in trips.values() if calls), default=time)
+    horizon = max(time, last_departure)
+    reversed_trips = {trip: [call.reversed_at(horizon) for call in reversed(calls)] for trip, calls in trips.items()}
+    reversed_transfers = {(to_stop, from_stop): minimum for (from_stop, to_stop), minimum in transfers.items()}
+    return reversed_trips, reversed_transfers, horizon
 
 
 def plan(trips, origin, destination, start, change_seconds, max_transfers, *, arrive_by=False):
@@ -250,11 +265,7 @@ def plan(trips, origin, destination, start, change_seconds, max_transfers, *, ar
     trips = table.trips
     transfers = table.transfers or {}
     if arrive_by:
-        # In the mirrored timetable, the latest feasible departure becomes the earliest arrival.
-        last_departure = max((calls[-1].departure for calls in trips.values() if calls), default=start)
-        horizon = max(start, last_departure)
-        trips = {trip: [c.reversed_at(horizon) for c in reversed(calls)] for trip, calls in trips.items()}
-        transfers = {(to_stop, from_stop): minimum for (from_stop, to_stop), minimum in transfers.items()}
+        trips, transfers, horizon = reverse_timetable(trips, transfers, start)
         origin, destination = destination, origin
         start = horizon - start
     results = []

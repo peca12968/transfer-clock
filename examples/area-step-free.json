@@ -1,0 +1,5 @@
+{
+  "stops": ["Studio", "Avenue", "Market", "MarketEast", "Depot", "DepotEast"],
+  "trips": ["local", "express", "direct"],
+  "transfers": [{"from_stop": "Market", "to_stop": "MarketEast", "minimum_seconds": 120}]
+}

@@ -78,6 +78,28 @@ python router.py examples/platform-night.csv Studio Depot 23:49:00 --step-free e
 
 快車未列入確認清單。無階梯模式保留另一班已確認的 shuttle。可用 `python -m unittest test_connections` 從實際命令列重跑這兩個方向。[正反查實際結果](examples/step-free-demo.json) · [驗證](test_connections.py)
 
+## 用步行時間比較門到門的行程
+
+起點可以走到 Studio 或 Avenue，終點可從 Depot 或 DepotEast 抵達。給定各方向的步行時間後，查詢可同時比較這些站點。
+
+```sh
+python area_trip.py examples/area-night.csv examples/area-walks.json 23:49:00 --transfer-rules examples/platform-transfer.json
+python area_trip.py examples/area-night.csv examples/area-walks.json 24:15:00 --transfer-rules examples/platform-transfer.json --arrive-by
+python area_trip.py examples/area-night.csv examples/area-walks.json 24:15:00 --transfer-rules examples/platform-transfer.json --arrive-by --step-free examples/area-step-free.json
+```
+
+| 條件 | 從起點出發 | 下車站與時間 | 抵達終點 |
+| --- | --- | --- | --- |
+| 直達 | 23:49 | DepotEast 24:10 | 24:15 |
+| 最快，轉乘一次 | 23:49 | Depot 24:12 | 24:14 |
+| 最晚出發，24:14 前抵達 | 23:49 | Depot 24:12 | 24:14 |
+| 最晚出發，24:15 前抵達 | 23:50 | DepotEast 24:10 | 24:15 |
+| 24:15 前抵達，含步行的無階梯路線 | 23:49 | Depot 24:12 | 24:14 |
+
+步行設定的 `origin` 與 `destination` 各列出 `stop` 和 `seconds`。前者是從起點走到站點，後者是從站點走至終點。行程至少包含一段搭乘。正查以步行後抵達終點的時間比較，反查以從起點開始步行的最晚時間比較。每輪共用班表掃描，並回傳有改善的轉乘選項。`access`、`egress` 與 `connections` 各自記錄步行與轉乘秒數。
+
+延誤、停駛和定向轉乘規則沿用原路由。使用 `--step-free` 時，每段首尾步行也須在設定檔明列 `step_free: true`，對應停靠點及車班仍須符合確認清單。範例未確認 Avenue 的起點步行，所以無階梯反查會改選 Studio。測試用 120 份合成班表窮舉正查與反查，並核對服務異動後的轉乘餘裕。[步行設定](examples/area-walks.json) · [四組實際輸出](examples/area-demo.json) · [端對端測試](test_area_trip.py)
+
 ## 先還共享單車，再搭夜班車
 
 從同一個騎車起點出發，最近的渡口站距離約 78 公尺，市場站約 156 公尺。23:54 從起點出發，市場站雖然較遠，還車後走到月台剛好趕上 00:05 快車，比在渡口站還車提早 11 分鐘抵達。使用 Python 3.12 和 .NET 10 SDK，從本專案目錄執行以下指令。

@@ -1,0 +1,8 @@
+trip_id,stop_id,stop_sequence,arrival_time,departure_time,pickup_type,drop_off_type
+local,Studio,10,23:50:00,23:50:00,0,1
+local,Market,20,24:03:00,24:04:00,0,0
+local,Depot,30,24:31:00,24:31:00,1,0
+express,MarketEast,1,24:05:00,24:05:00,0,1
+express,Depot,2,24:12:00,24:12:00,1,0
+direct,Avenue,1,23:55:00,23:55:00,0,1
+direct,DepotEast,2,24:10:00,24:10:00,1,0

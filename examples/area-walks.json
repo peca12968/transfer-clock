@@ -1,0 +1,10 @@
+{
+  "origin": [
+    {"stop": "Studio", "seconds": 60, "step_free": true},
+    {"stop": "Avenue", "seconds": 300}
+  ],
+  "destination": [
+    {"stop": "Depot", "seconds": 120, "step_free": true},
+    {"stop": "DepotEast", "seconds": 300, "step_free": true}
+  ]
+}
