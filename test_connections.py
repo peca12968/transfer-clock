@@ -13,6 +13,23 @@ ROOT = Path(__file__).resolve().parent
 EXAMPLES = ROOT / "examples"
 PLATFORMS = EXAMPLES / "platform-night.csv"
 LINK = EXAMPLES / "platform-transfer.json"
+ACCESS = EXAMPLES / "step-free-profile.json"
+CLOSURE = EXAMPLES / "platform-closure.json"
+
+
+def step_free_demo():
+    scenarios = []
+    for name, profile, rules in (("standard", None, LINK), ("step_free", ACCESS, LINK), ("closed", ACCESS, CLOSURE)):
+        cases = []
+        for reverse, time in ((False, "23:49:00"), (True, "24:23:00")):
+            flags = ["--arrive-by"] if reverse else []
+            if profile is not None:
+                flags.extend(("--step-free", profile))
+            result = subprocess.run([sys.executable, ROOT / "router.py", PLATFORMS, "Studio", "Depot", time,
+                                     "--transfer-rules", rules, *flags], check=True, capture_output=True, text=True)
+            cases.append(json.loads(result.stdout)["journeys"])
+        scenarios.append({"scenario": name, "journeys": cases[0], "arrive_by": {"deadline": "24:23:00", "journeys": cases[1]}})
+    return scenarios
 
 
 def exhaustive(trips, rules, start, reverse):
@@ -48,6 +65,65 @@ def exhaustive(trips, rules, start, reverse):
 
 
 class TransferConnectionTests(unittest.TestCase):
+    def test_step_free_cli_skips_unconfirmed_trips_and_respects_closures_in_both_directions(self):
+        reports = step_free_demo()
+        self.assertEqual(reports, json.loads((EXAMPLES / "step-free-demo.json").read_text(encoding="utf-8")))
+        self.assertEqual([report["journeys"][-1]["arrival"] for report in reports], ["24:12:00", "24:23:00", "24:31:00"])
+        self.assertEqual([leg["trip"] for leg in reports[1]["journeys"][-1]["legs"]], ["local", "shuttle"])
+        self.assertEqual([leg["trip"] for leg in reports[1]["arrive_by"]["journeys"][-1]["legs"]], ["feeder", "shuttle"])
+        self.assertEqual(reports[1]["arrive_by"]["journeys"][-1]["departure"], "23:57:00")
+        self.assertEqual(reports[2]["arrive_by"]["journeys"], [])
+
+    def test_step_free_permissions_keep_through_rides_and_require_a_confirmed_same_stop_link(self):
+        legs = {"first": [Call("A", 1, 1, 1, True, False), Call("B", 2, 2, 2, False, True)],
+                "last": [Call("B", 3, 3, 1, True, False), Call("D", 6, 6, 2, False, True)],
+                "through": [Call("A", 0, 0, 1, True, False), Call("C", 5, 5, 2, True, True), Call("D", 8, 8, 3, False, True)]}
+        profile = {"stops": ["A", "B", "D"], "trips": list(legs), "transfers": []}
+        with TemporaryDirectory() as directory:
+            access = Path(directory) / "profile.json"
+            access.write_text(json.dumps(profile), encoding="utf-8")
+            table = timetable(legs, step_free=access)
+            self.assertEqual([journey["arrival"] for journey in plan(table, "A", "D", 0, 0, 2)], ["00:00:08"])
+            self.assertEqual(plan(table, "A", "C", 0, 0, 2), [])
+            self.assertEqual(plan(table, "C", "D", 8, 0, 2, arrive_by=True), [])
+            self.assertEqual(plan(table, "A", "D", 6, 0, 2, arrive_by=True), [])
+            profile["transfers"] = [{"from_stop": "B", "to_stop": "B", "minimum_seconds": 1}]
+            access.write_text(json.dumps(profile), encoding="utf-8")
+            table = timetable(legs, step_free=access)
+            self.assertEqual(plan(table, "A", "D", 0, 120, 2)[-1]["arrival"], "00:00:06")
+            route, = plan(table, "A", "D", 6, 120, 2, arrive_by=True)
+            self.assertEqual(route["connections"][0]["slack_seconds"], 0)
+
+    def test_step_free_uses_the_stricter_explicit_minimum_and_respects_trip_updates(self):
+        trips = read_calls(PLATFORMS)
+        with TemporaryDirectory() as directory:
+            rules = Path(directory) / "rules.json"
+            rules.write_text(json.dumps([{"from_stop": "Market", "to_stop": "MarketEast", "minimum_seconds": 121}]), encoding="utf-8")
+            table = timetable(trips, transfer_rules=rules, step_free=ACCESS)
+            route, = plan(table, "Studio", "Depot", seconds("24:23:00"), 120, 2, arrive_by=True)
+            self.assertEqual(route["departure"], "23:50:00")
+            self.assertEqual(route["connections"][0]["minimum_seconds"], 121)
+            delayed = timetable(trips, EXAMPLES / "night-disruption.json", LINK, step_free=ACCESS)
+            route, = plan(delayed, "Studio", "Depot", seconds("23:49:00"), 120, 2)
+            self.assertEqual(route["arrival"], "24:33:00")
+            self.assertEqual(route["connections"], [])
+
+    def test_step_free_profile_rejects_duplicates_and_unverified_link_endpoints(self):
+        profile = json.loads(ACCESS.read_text(encoding="utf-8"))
+        link = profile["transfers"][0]
+        bad_profiles = [
+            (dict(profile, trips=["unknown"]), "list of known IDs"),
+            (dict(profile, trips=["local", "local"]), "repeated ID"),
+            (dict(profile, stops=["Market"]), "unknown transfer stop"),
+            (dict(profile, transfers=[dict(link, minimum_seconds=None)]), "confirmed travel time"),
+        ]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "profile.json"
+            for value, message in bad_profiles:
+                path.write_text(json.dumps(value), encoding="utf-8")
+                with self.subTest(value=value), self.assertRaisesRegex(ValueError, message):
+                    timetable(read_calls(PLATFORMS), step_free=path)
+
     def test_exact_walk_and_reverse_deadline_with_actual_cli(self):
         for reverse, time in ((False, "23:49:00"), (True, "24:12:00")):
             flags = ["--arrive-by"] if reverse else []

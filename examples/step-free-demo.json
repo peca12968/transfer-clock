@@ -1,0 +1,221 @@
+[
+  {
+    "scenario": "standard",
+    "journeys": [
+      {
+        "arrival": "24:31:00",
+        "transfers": 0,
+        "legs": [
+          {
+            "trip": "local",
+            "origin": "Studio",
+            "destination": "Depot",
+            "board_sequence": 10,
+            "exit_sequence": 30,
+            "departure": "23:50:00",
+            "arrival": "24:31:00"
+          }
+        ],
+        "connections": []
+      },
+      {
+        "arrival": "24:12:00",
+        "transfers": 1,
+        "legs": [
+          {
+            "trip": "local",
+            "origin": "Studio",
+            "destination": "Market",
+            "board_sequence": 10,
+            "exit_sequence": 20,
+            "departure": "23:50:00",
+            "arrival": "24:03:00"
+          },
+          {
+            "trip": "express",
+            "origin": "MarketEast",
+            "destination": "Depot",
+            "board_sequence": 1,
+            "exit_sequence": 2,
+            "departure": "24:05:00",
+            "arrival": "24:12:00"
+          }
+        ],
+        "connections": [
+          {
+            "from_stop": "Market",
+            "to_stop": "MarketEast",
+            "arrival": "24:03:00",
+            "ready": "24:05:00",
+            "departure": "24:05:00",
+            "minimum_seconds": 120,
+            "slack_seconds": 0
+          }
+        ]
+      }
+    ],
+    "arrive_by": {
+      "deadline": "24:23:00",
+      "journeys": [
+        {
+          "departure": "23:57:00",
+          "arrival": "24:23:00",
+          "transfers": 1,
+          "legs": [
+            {
+              "trip": "feeder",
+              "origin": "Studio",
+              "destination": "Market",
+              "board_sequence": 1,
+              "exit_sequence": 2,
+              "departure": "23:57:00",
+              "arrival": "24:07:00"
+            },
+            {
+              "trip": "shuttle",
+              "origin": "MarketEast",
+              "destination": "Depot",
+              "board_sequence": 1,
+              "exit_sequence": 2,
+              "departure": "24:09:00",
+              "arrival": "24:23:00"
+            }
+          ],
+          "connections": [
+            {
+              "from_stop": "Market",
+              "to_stop": "MarketEast",
+              "arrival": "24:07:00",
+              "ready": "24:09:00",
+              "departure": "24:09:00",
+              "minimum_seconds": 120,
+              "slack_seconds": 0
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "scenario": "step_free",
+    "journeys": [
+      {
+        "arrival": "24:31:00",
+        "transfers": 0,
+        "legs": [
+          {
+            "trip": "local",
+            "origin": "Studio",
+            "destination": "Depot",
+            "board_sequence": 10,
+            "exit_sequence": 30,
+            "departure": "23:50:00",
+            "arrival": "24:31:00"
+          }
+        ],
+        "connections": []
+      },
+      {
+        "arrival": "24:23:00",
+        "transfers": 1,
+        "legs": [
+          {
+            "trip": "local",
+            "origin": "Studio",
+            "destination": "Market",
+            "board_sequence": 10,
+            "exit_sequence": 20,
+            "departure": "23:50:00",
+            "arrival": "24:03:00"
+          },
+          {
+            "trip": "shuttle",
+            "origin": "MarketEast",
+            "destination": "Depot",
+            "board_sequence": 1,
+            "exit_sequence": 2,
+            "departure": "24:09:00",
+            "arrival": "24:23:00"
+          }
+        ],
+        "connections": [
+          {
+            "from_stop": "Market",
+            "to_stop": "MarketEast",
+            "arrival": "24:03:00",
+            "ready": "24:05:00",
+            "departure": "24:09:00",
+            "minimum_seconds": 120,
+            "slack_seconds": 240
+          }
+        ]
+      }
+    ],
+    "arrive_by": {
+      "deadline": "24:23:00",
+      "journeys": [
+        {
+          "departure": "23:57:00",
+          "arrival": "24:23:00",
+          "transfers": 1,
+          "legs": [
+            {
+              "trip": "feeder",
+              "origin": "Studio",
+              "destination": "Market",
+              "board_sequence": 1,
+              "exit_sequence": 2,
+              "departure": "23:57:00",
+              "arrival": "24:07:00"
+            },
+            {
+              "trip": "shuttle",
+              "origin": "MarketEast",
+              "destination": "Depot",
+              "board_sequence": 1,
+              "exit_sequence": 2,
+              "departure": "24:09:00",
+              "arrival": "24:23:00"
+            }
+          ],
+          "connections": [
+            {
+              "from_stop": "Market",
+              "to_stop": "MarketEast",
+              "arrival": "24:07:00",
+              "ready": "24:09:00",
+              "departure": "24:09:00",
+              "minimum_seconds": 120,
+              "slack_seconds": 0
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "scenario": "closed",
+    "journeys": [
+      {
+        "arrival": "24:31:00",
+        "transfers": 0,
+        "legs": [
+          {
+            "trip": "local",
+            "origin": "Studio",
+            "destination": "Depot",
+            "board_sequence": 10,
+            "exit_sequence": 30,
+            "departure": "23:50:00",
+            "arrival": "24:31:00"
+          }
+        ],
+        "connections": []
+      }
+    ],
+    "arrive_by": {
+      "deadline": "24:23:00",
+      "journeys": []
+    }
+  }
+]

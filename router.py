@@ -2,7 +2,7 @@
 import argparse
 from collections import defaultdict
 import csv
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
 from pathlib import Path
 import re
@@ -77,11 +77,16 @@ class Timetable:
     trips: dict[str, list[Call]]
     stops: frozenset[str]
     transfers: dict[tuple[str, str], int | None] | None = None
+    step_free_stops: frozenset[str] | None = None
 
 
 def read_transfers(path, stops):
     pairs = json.loads(path.read_text(encoding="utf-8-sig"),
                        object_pairs_hook=lambda fields: unique_fields(fields, "transfer"))
+    return parse_transfers(pairs, stops)
+
+
+def parse_transfers(pairs, stops):
     if not isinstance(pairs, list):
         raise ValueError("expected an array of transfer rules")
     transfers = {}
@@ -100,11 +105,41 @@ def read_transfers(path, stops):
     return transfers
 
 
-def timetable(trips, updates=None, transfer_rules=None):
+def read_step_free(path, stops, trips):
+    profile = json.loads(path.read_text(encoding="utf-8-sig"),
+                         object_pairs_hook=lambda fields: unique_fields(fields, "step-free profile"))
+    if not isinstance(profile, dict) or set(profile) != {"stops", "trips", "transfers"}:
+        raise ValueError("step-free profile requires stops, trips and transfers")
+
+    def confirmed(field, known):
+        items = profile[field]
+        if not isinstance(items, list) or any(not isinstance(item, str) or item not in known for item in items):
+            raise ValueError(f"step-free {field} must be a list of known IDs")
+        if len(set(items)) != len(items):
+            raise ValueError(f"repeated ID in step-free {field}")
+        return frozenset(items)
+
+    access_stops = confirmed("stops", stops)
+    vehicles = confirmed("trips", trips)
+    links = parse_transfers(profile["transfers"], access_stops)
+    if any(minimum is None for minimum in links.values()):
+        raise ValueError("step-free transfers require a confirmed travel time")
+    return access_stops, vehicles, links
+
+
+def timetable(trips, updates=None, transfer_rules=None, *, step_free=None):
     stops = frozenset(call.stop for calls in trips.values() for call in calls)
     active = read_active_trips(trips, updates) if updates is not None else trips
     transfers = read_transfers(transfer_rules, stops) if transfer_rules is not None else None
-    return Timetable(active, stops, transfers)
+    if step_free is None:
+        return Timetable(active, stops, transfers)
+    access_stops, access_trips, access_links = read_step_free(step_free, stops, trips)
+    active = {trip: [call if call.stop in access_stops else replace(call, pickup=False, dropoff=False)
+                     for call in calls] for trip, calls in active.items() if trip in access_trips}
+    rules = transfers or {}
+    links = {pair: max(minimum, rules.get(pair, 0)) for pair, minimum in access_links.items()
+             if rules.get(pair, 0) is not None}
+    return Timetable(active, stops, links, access_stops)
 
 
 @dataclass(frozen=True)
@@ -207,6 +242,11 @@ def plan(trips, origin, destination, start, change_seconds, max_transfers, *, ar
     table = trips if isinstance(trips, Timetable) else timetable(trips)
     if origin not in table.stops or destination not in table.stops:
         raise ValueError("unknown origin or destination")
+    default_change = change_seconds
+    if table.step_free_stops is not None:
+        if origin not in table.step_free_stops or destination not in table.step_free_stops:
+            return []
+        default_change = None
     trips = table.trips
     transfers = table.transfers or {}
     if arrive_by:
@@ -218,7 +258,7 @@ def plan(trips, origin, destination, start, change_seconds, max_transfers, *, ar
         origin, destination = destination, origin
         start = horizon - start
     results = []
-    for label in earliest_labels(trips, origin, destination, start, change_seconds, max_transfers, transfers):
+    for label in earliest_labels(trips, origin, destination, start, default_change, max_transfers, transfers):
         legs = label.legs()
         if arrive_by:
             legs = [leg.reversed_at(horizon) for leg in reversed(legs)]
@@ -229,7 +269,7 @@ def plan(trips, origin, destination, start, change_seconds, max_transfers, *, ar
             times = {"arrival": clock(label.time)}
         journey = {**times, "transfers": max(0, len(legs)-1), "legs": [leg.record() for leg in legs]}
         if table.transfers is not None:
-            journey["connections"] = connection_details(legs, table.transfers, change_seconds)
+            journey["connections"] = connection_details(legs, table.transfers, default_change)
         results.append(journey)
     return results
 
@@ -243,11 +283,12 @@ def main():
     parser.add_argument("--arrive-by", action="store_true", help="find the latest departures meeting the deadline")
     parser.add_argument("--service-updates", type=Path, help="apply delays and cancellations from a JSON file")
     parser.add_argument("--transfer-rules", type=Path, help="load directional connections and minimum transfer times")
+    parser.add_argument("--step-free", type=Path, help="require confirmed step-free trips, stops and directional transfers")
     parser.add_argument("--change-seconds", type=int, default=120)
     parser.add_argument("--max-transfers", type=int, default=2)
     args = parser.parse_args()
     try:
-        trips = timetable(read_calls(args.stop_times), args.service_updates, args.transfer_rules)
+        trips = timetable(read_calls(args.stop_times), args.service_updates, args.transfer_rules, step_free=args.step_free)
         journeys = plan(trips, args.origin, args.destination, seconds(args.time),
                         args.change_seconds, args.max_transfers, arrive_by=args.arrive_by)
     except (OSError, ValueError, csv.Error) as error:

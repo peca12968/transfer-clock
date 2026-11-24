@@ -58,6 +58,26 @@ python router.py examples/platform-night.csv Studio Depot 24:12:00 --arrive-by -
 
 規則檔每筆指定 `from_stop`、`to_stop` 和 `minimum_seconds`，秒數涵蓋下車到下一段可上車的完整路徑。兩個方向分別設定。同站預設使用 `--change-seconds`，也可各站覆寫。跨站換車需有對應規則，第一段上車與最後一段下車各自使用查詢指定站點。啟用規則時，每條行程另列出 `connections`，包含下車、步行完成、下一班發車時間與剩餘秒數。單車接駁及服務延誤可和規則一起使用。[規則範例](examples/platform-transfer.json) · [三種實際輸出](examples/platform-demo.json) · [正反查及單向驗證](test_connections.py)
 
+## 查詢已確認的無階梯行程
+
+```sh
+python router.py examples/platform-night.csv Studio Depot 23:49:00 --step-free examples/step-free-profile.json
+python router.py examples/platform-night.csv Studio Depot 24:23:00 --arrive-by --step-free examples/step-free-profile.json
+python router.py examples/platform-night.csv Studio Depot 23:49:00 --step-free examples/step-free-profile.json --transfer-rules examples/platform-closure.json
+```
+
+`--step-free` 讀取同一服務日的確認清單。`stops` 列出可無階梯上下車的站點，`trips` 列出已確認的車班，`transfers` 列出定向無階梯轉乘所需秒數。跨月台與同站換車都要有確認路徑，轉乘時間取自明列規則。續乘同一班車可以經過未確認的中途站。原班表的禁止上下車、延誤與停駛仍適用。
+
+同時傳入 `--transfer-rules` 時，關閉的連接會從確認清單移除，兩份檔案各有時間時採較長的一個。模式使用呼叫端提供的確認資料，範例使用合成班表與電梯連接狀態。[確認清單](examples/step-free-profile.json) · [連接關閉範例](examples/platform-closure.json)
+
+| 條件 | 正查最快到站 | 24:23 前最晚出發 |
+| --- | --- | --- |
+| 一般路由 | 24:12，慢車 → 快車 | 23:57，接駁車轉 shuttle |
+| 確認無階梯路由 | 24:23，慢車 → shuttle | 23:57，接駁車轉 shuttle |
+| 確認無階梯路由，轉乘連接關閉 | 24:31，直達慢車 | 無符合期限的行程 |
+
+快車未列入確認清單。無階梯模式保留另一班已確認的 shuttle。可用 `python -m unittest test_connections` 從實際命令列重跑這兩個方向。[正反查實際結果](examples/step-free-demo.json) · [驗證](test_connections.py)
+
 ## 先還共享單車，再搭夜班車
 
 從同一個騎車起點出發，最近的渡口站距離約 78 公尺，市場站約 156 公尺。23:54 從起點出發，市場站雖然較遠，還車後走到月台剛好趕上 00:05 快車，比在渡口站還車提早 11 分鐘抵達。使用 Python 3.12 和 .NET 10 SDK，從本專案目錄執行以下指令。

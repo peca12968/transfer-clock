@@ -1,0 +1,7 @@
+{
+  "stops": ["Studio", "Market", "MarketEast", "Depot"],
+  "trips": ["local", "feeder", "shuttle", "staff"],
+  "transfers": [
+    {"from_stop": "Market", "to_stop": "MarketEast", "minimum_seconds": 120}
+  ]
+}
