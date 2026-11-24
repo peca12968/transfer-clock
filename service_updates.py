@@ -4,11 +4,11 @@ from dataclasses import replace
 import json
 
 
-def unique_fields(pairs):
+def unique_fields(pairs, kind="service update"):
     result = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"duplicate service update field: {key}")
+            raise ValueError(f"duplicate {kind} field: {key}")
         result[key] = value
     return result
 

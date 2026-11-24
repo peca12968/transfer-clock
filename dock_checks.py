@@ -20,8 +20,8 @@ EXAMPLES = ROOT / "examples"
 class DockTests(unittest.TestCase):
     dll = DEFAULT_DLL
 
-    def cli(self, time, *flags, snapshot=None, destination="Depot", success=True):
-        args = [sys.executable, str(ROOT / "dock_trip.py"), str(EXAMPLES / "night.csv"),
+    def cli(self, time, *flags, snapshot=None, destination="Depot", stop_times="night.csv", success=True):
+        args = [sys.executable, str(ROOT / "dock_trip.py"), str(EXAMPLES / stop_times),
                 str(snapshot or EXAMPLES / "dock-night.json"), destination, time, "--radius-dll", str(self.dll), *flags]
         result = subprocess.run(args, capture_output=True, text=True, timeout=30)
         if success:
@@ -80,6 +80,16 @@ class DockTests(unittest.TestCase):
         self.assertEqual((arrived[0]["departOrigin"], arrived[0]["readyAtStop"], arrived[0]["legs"]),
                          ("00:00:00", "00:11:00", []))
         self.assertEqual(self.cli("00:10:59", *args, destination="Market")["journeys"], [])
+
+    def test_bike_return_and_platform_transfer_share_deadline(self):
+        flags = ("--max-meters", "100", "--transfer-rules", str(EXAMPLES / "platform-transfer.json"))
+        forward = self.cli("23:47:00", *flags, stop_times="platform-night.csv")["journeys"][0]
+        reverse, = self.cli("24:12:00", *flags, "--arrive-by", stop_times="platform-night.csv")["journeys"]
+        self.assertEqual(forward, reverse)
+        self.assertEqual((reverse["dock"], reverse["departOrigin"], reverse["readyAtStop"], reverse["arrival"]),
+                         ("ferry", "23:47:00", "23:50:00", "24:12:00"))
+        self.assertEqual([(row["from_stop"], row["to_stop"], row["slack_seconds"]) for row in reverse["connections"]],
+                         [("Market", "MarketEast", 0)])
 
     def test_invalid_access_even_if_dock_is_unavailable(self):
         data = json.loads((EXAMPLES / "dock-night.json").read_text(encoding="utf-8"))
