@@ -30,10 +30,9 @@ dotnet run -c Release -- examples/riverside.json
 
 ```sh
 dotnet build -c Release
-git clone https://github.com/peca12968/transfer-clock.git ../tile-satchel
-git -C ../tile-satchel checkout 4d272a2ac74b37c777794bd418a8c9a3cb1ad9bc
-python -m pip install -r ../tile-satchel/requirements.txt
-python offline_demo.py ../tile-satchel
+git worktree add --detach ../tile-satchel-verified 4d272a2ac74b37c777794bd418a8c9a3cb1ad9bc
+python -m pip install -r ../tile-satchel-verified/requirements.txt
+python offline_demo.py ../tile-satchel-verified
 ```
 
 ### 站點與查詢欄位

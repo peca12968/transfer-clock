@@ -41,9 +41,8 @@ python router.py examples/night.csv Studio Depot 24:22:59 --arrive-by
 從同一個騎車起點出發，最近的渡口站距離約 78 公尺，市場站約 156 公尺。23:54 從起點出發，市場站雖然較遠，還車後走到月台剛好趕上 00:05 快車，比在渡口站還車提早 11 分鐘抵達。使用 Python 3.12 和 .NET 10 SDK，從本專案目錄執行以下指令。
 
 ```sh
-git clone https://github.com/peca12968/transfer-clock.git ../return-radius
-git -C ../return-radius checkout --detach a3d78f802b898eb6751a75ea5bb15a7b629648ff
-dotnet build ../return-radius/ReturnRadius.csproj -c Release
+git worktree add --detach ../return-radius-verified a3d78f802b898eb6751a75ea5bb15a7b629648ff
+dotnet build ../return-radius-verified/ReturnRadius.csproj -c Release
 python dock_trip.py examples/night.csv examples/dock-night.json Depot 23:54:00 --max-meters 180
 python dock_trip.py examples/night.csv examples/dock-night.json Depot 24:23:00 --max-meters 180 --needed 2 --arrive-by
 python dock_checks.py
