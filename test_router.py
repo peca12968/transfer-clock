@@ -6,11 +6,12 @@ import sys
 import tempfile
 import unittest
 
-from router import Call, plan, read_calls, seconds
+from router import Call, plan, read_calls, seconds, timetable
 
 
 ROOT = Path(__file__).resolve().parent
 EXAMPLE = ROOT / "examples" / "night.csv"
+DISRUPTION = ROOT / "examples" / "night-disruption.json"
 
 
 def enumerate_journeys(trips, origin, destination, start, gap, limit, *, arrive_by=False):
@@ -71,6 +72,81 @@ class RouteTest(unittest.TestCase):
                 self.assertEqual(command.returncode, 0, command.stderr)
                 journeys = json.loads(command.stdout)["journeys"]
                 self.assertEqual([(j["transfers"], j["departure"], j["arrival"]) for j in journeys], expected)
+
+    def test_service_updates_replan_in_both_directions(self):
+        args = ["--service-updates", DISRUPTION]
+        forward = self.cli(EXAMPLE, "Studio", "Depot", "23:49:00", *args)
+        self.assertEqual(forward.returncode, 0, forward.stderr)
+        direct, transfer = json.loads(forward.stdout)["journeys"]
+        self.assertEqual(direct["arrival"], "24:33:00")
+        self.assertEqual(transfer["arrival"], "24:15:00")
+        self.assertEqual([(leg["trip"], leg["departure"], leg["arrival"]) for leg in transfer["legs"]],
+                         [("local", "23:50:00", "24:06:00"), ("express", "24:08:00", "24:15:00")])
+        missed = self.cli(EXAMPLE, "Studio", "Depot", "23:49:00", "--change-seconds", 121, *args)
+        self.assertEqual(json.loads(missed.stdout)["journeys"], [direct])
+        reverse = self.cli(EXAMPLE, "Studio", "Depot", "24:15:00", "--arrive-by", *args)
+        self.assertEqual(json.loads(reverse.stdout)["journeys"], [{**transfer, "departure": "23:50:00"}])
+        early = self.cli(EXAMPLE, "Studio", "Depot", "24:14:59", "--arrive-by", *args)
+        self.assertEqual(json.loads(early.stdout)["journeys"], [])
+
+    def test_transfer_demo_matches_cli(self):
+        fixture = ROOT / "examples" / "transfer-demo.json"
+        demo = json.loads(fixture.read_text(encoding="utf-8"))
+        self.assertEqual([(row["scenario"], row["change_seconds"]) for row in demo],
+                         [(name, gap) for name in ("scheduled", "disrupted") for gap in (120, 121)])
+        for row in demo:
+            update = ["--service-updates", DISRUPTION] if row["scenario"] == "disrupted" else []
+            query = self.cli(EXAMPLE, "Studio", "Depot", "23:49:00", "--change-seconds", row["change_seconds"], *update)
+            self.assertEqual(query.returncode, 0, query.stderr)
+            routes = [{"arrival": journey["arrival"], "trips": [leg["trip"] for leg in journey["legs"]]}
+                      for journey in json.loads(query.stdout)["journeys"]]
+            self.assertEqual(routes, row["routes"])
+
+    def test_propagated_delay_and_all_cancelled_stops(self):
+        trips = read_calls(EXAMPLE)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "updates.json"
+            path.write_text(json.dumps({"trips": [{"trip_id": "local", "stop_delays": [
+                {"stop_sequence": 20, "delay_seconds": 180}
+            ]}]}), encoding="utf-8")
+            adjusted = timetable(trips, path).trips["local"]
+            self.assertEqual([call.arrival - original.arrival for call, original in zip(adjusted, trips["local"])],
+                             [0, 180, 180])
+            self.assertEqual([call.departure - original.departure for call, original in zip(adjusted, trips["local"])],
+                             [0, 180, 180])
+            path.write_text(json.dumps({"trips": [{"trip_id": trip, "cancelled": True} for trip in trips]}),
+                            encoding="utf-8")
+            cancelled = timetable(trips, path)
+            for arrive_by in [False, True]:
+                self.assertEqual(plan(cancelled, "Studio", "Depot", 86_400, 120, 2, arrive_by=arrive_by), [])
+                self.assertEqual(plan(cancelled, "Studio", "Studio", 86_400, 120, 2, arrive_by=arrive_by)[0]["legs"], [])
+                with self.assertRaisesRegex(ValueError, "unknown origin or destination"):
+                    plan(cancelled, "Unknown", "Depot", 86_400, 120, 2, arrive_by=arrive_by)
+
+    def test_service_updates_reject_ambiguous_or_impossible_inputs(self):
+        trips = read_calls(EXAMPLE)
+        cases = [
+            ([{"trip_id": "unknown", "cancelled": True}], "unknown or repeated trip_id"),
+            ([{"trip_id": "local", "cancelled": True, "delay_seconds": 0}], "cancellation or delay"),
+            ([{"trip_id": "local", "delay_seconds": True}], "nonnegative integer"),
+            ([{"trip_id": "local", "delay_seconds": -1}], "nonnegative integer"),
+            ([{"trip_id": "local", "stop_delays": [{"stop_sequence": 2, "delay_seconds": 1}]}],
+             "unknown or repeated stop_sequence"),
+            ([{"trip_id": "local", "delay_seconds": 2000, "stop_delays": [
+                {"stop_sequence": 30, "delay_seconds": 0}
+            ]}], "arrive before the previous departure"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "updates.json"
+            for records, error in cases:
+                with self.subTest(records=records):
+                    path.write_text(json.dumps({"trips": records}), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, error):
+                        timetable(trips, path)
+            path.write_text('{"trips":[],"trips":[]}', encoding="utf-8")
+            invalid = self.cli(EXAMPLE, "Studio", "Depot", "23:49:00", "--service-updates", path)
+            self.assertEqual((invalid.returncode, invalid.stdout), (1, ""))
+            self.assertIn("duplicate service update field", invalid.stderr)
 
     def test_random_frontiers_and_feasibility_of_every_returned_leg(self):
         rng = random.Random(464)

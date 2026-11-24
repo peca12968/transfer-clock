@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 from tempfile import TemporaryDirectory
 
-from router import clock, plan, read_calls, seconds
+from router import clock, plan, read_calls, seconds, timetable
 
 
 DEFAULT_DLL = Path(__file__).resolve().parent.parent / "return-radius/bin/Release/net10.0/ReturnRadius.dll"
@@ -80,6 +80,7 @@ def main():
     parser.add_argument("--needed", type=int, default=1)
     parser.add_argument("--max-meters", type=float, required=True)
     parser.add_argument("--arrive-by", action="store_true")
+    parser.add_argument("--service-updates", type=Path, help="apply delays and cancellations from a JSON file")
     parser.add_argument("--change-seconds", type=int, default=120)
     parser.add_argument("--max-transfers", type=int, default=2)
     parser.add_argument("--radius-dll", type=Path, default=DEFAULT_DLL)
@@ -90,12 +91,11 @@ def main():
             raise ValueError("expected a nonnegative finite radius and a positive bike count")
         if min(args.change_seconds, args.max_transfers) < 0:
             raise ValueError("transfer allowance and transfer limit must be nonnegative")
-        trips = read_calls(args.stop_times)
-        stops = {call.stop for calls in trips.values() for call in calls}
-        if args.destination not in stops:
+        trips = timetable(read_calls(args.stop_times), args.service_updates)
+        if args.destination not in trips.stops:
             raise ValueError("unknown destination")
         config = json.loads(args.access_snapshot.read_text(encoding="utf-8-sig"))
-        docks = available_docks(config, stops, args.needed, args.max_meters, args.radius_dll)
+        docks = available_docks(config, trips.stops, args.needed, args.max_meters, args.radius_dll)
         journeys = connect(trips, docks, args.destination, time, args.change_seconds, args.max_transfers, args.arrive_by)
     except (ValueError, OSError, csv.Error) as error:
         parser.exit(1, f"{parser.prog}: {error}\n")

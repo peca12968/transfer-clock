@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 import re
 
+from service_updates import read_active_trips
+
 
 def seconds(value):
     if not isinstance(value, str) or not re.fullmatch(r"[0-9]+:[0-5][0-9]:[0-5][0-9]", value):
@@ -68,6 +70,18 @@ def read_calls(path):
             if a.sequence == b.sequence or a.departure > b.arrival:
                 raise ValueError(f"trip {trip}: repeated sequence or reversed time")
     return dict(sorted(trips.items()))
+
+
+@dataclass(frozen=True)
+class Timetable:
+    trips: dict[str, list[Call]]
+    stops: frozenset[str]
+
+
+def timetable(trips, updates=None):
+    stops = frozenset(call.stop for calls in trips.values() for call in calls)
+    active = read_active_trips(trips, updates) if updates is not None else trips
+    return Timetable(active, stops)
 
 
 @dataclass(frozen=True)
@@ -135,12 +149,14 @@ def earliest_labels(trips, origin, destination, start, change_seconds, max_trans
 def plan(trips, origin, destination, start, change_seconds, max_transfers, *, arrive_by=False):
     if min(start, change_seconds, max_transfers) < 0:
         raise ValueError("time, transfer allowance and transfer limit must be nonnegative")
-    stops = {call.stop for calls in trips.values() for call in calls}
-    if origin not in stops or destination not in stops:
+    table = trips if isinstance(trips, Timetable) else timetable(trips)
+    if origin not in table.stops or destination not in table.stops:
         raise ValueError("unknown origin or destination")
+    trips = table.trips
     if arrive_by:
         # In the mirrored timetable, the latest feasible departure becomes the earliest arrival.
-        horizon = max(start, max(calls[-1].departure for calls in trips.values() if calls))
+        last_departure = max((calls[-1].departure for calls in trips.values() if calls), default=start)
+        horizon = max(start, last_departure)
         trips = {trip: [c.reversed_at(horizon) for c in reversed(calls)] for trip, calls in trips.items()}
         origin, destination = destination, origin
         start = horizon - start
@@ -165,11 +181,12 @@ def main():
     parser.add_argument("destination")
     parser.add_argument("time", help="earliest departure, or arrival deadline with --arrive-by")
     parser.add_argument("--arrive-by", action="store_true", help="find the latest departures meeting the deadline")
+    parser.add_argument("--service-updates", type=Path, help="apply delays and cancellations from a JSON file")
     parser.add_argument("--change-seconds", type=int, default=120)
     parser.add_argument("--max-transfers", type=int, default=2)
     args = parser.parse_args()
     try:
-        trips = read_calls(args.stop_times)
+        trips = timetable(read_calls(args.stop_times), args.service_updates)
         journeys = plan(trips, args.origin, args.destination, seconds(args.time),
                         args.change_seconds, args.max_transfers, arrive_by=args.arrive_by)
     except (OSError, ValueError, csv.Error) as error:

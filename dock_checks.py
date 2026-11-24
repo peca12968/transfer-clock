@@ -61,6 +61,18 @@ class DockTests(unittest.TestCase):
         near = self.cli("24:23:00", "--arrive-by", "--max-meters", "100", "--max-transfers", "0")
         self.assertEqual(near, {"eligibleDocks": 1, "journeys": []})
 
+    def test_disruptions_reschedule_bike_connections_and_deadlines(self):
+        args = ["--max-meters", "180", "--service-updates", str(EXAMPLES / "night-disruption.json")]
+        forward = self.cli("23:54:01", *args)
+        self.assertEqual(forward["eligibleDocks"], 2)
+        market, = forward["journeys"]
+        self.assertEqual((market["dock"], market["readyAtStop"], market["arrival"]),
+                         ("market", "24:05:01", "24:15:00"))
+        self.assertEqual([leg["trip"] for leg in market["legs"]], ["express"])
+        reverse, = self.cli("24:15:00", *args, "--arrive-by", "--needed", "2")["journeys"]
+        self.assertEqual((reverse["departOrigin"], reverse["readyAtStop"], reverse["arrival"]),
+                         ("23:57:00", "24:08:00", "24:15:00"))
+
     def test_same_stop_can_finish_on_foot_and_cannot_leave_before_day_start(self):
         args = ["--arrive-by", "--max-meters", "180", "--needed", "2"]
         arrived = self.cli("00:11:00", *args, destination="Market")["journeys"]

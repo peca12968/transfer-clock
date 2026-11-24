@@ -36,6 +36,17 @@ python router.py examples/night.csv Studio Depot 24:22:59 --arrive-by
 
 第二條路在 Market 的到站時間是 24:07，能趕上 24:09 的接駁車，剛好符合兩分鐘的轉乘要求。若到站期限比接駁車的 24:23 提早一秒，就必須提早七分鐘從 Studio 搭車。結果包含實際出發和抵達時間。同一換車次數若有多條路同樣晚出發，回傳其中一條可行路線。
 
+## 把臨時延誤與停駛納入轉乘查詢
+
+```sh
+python router.py examples/night.csv Studio Depot 23:49:00 --service-updates examples/night-disruption.json
+python router.py examples/night.csv Studio Depot 24:15:00 --arrive-by --service-updates examples/night-disruption.json
+```
+
+Market 的慢車延誤 3 分鐘後在 24:06 抵達，快車也延誤至 24:08 發車，仍保有整整 2 分鐘的轉乘時間，24:15 到 Depot。接駁車停駛時，若轉乘至少需 121 秒，就只剩 24:33 到的直達慢車。查詢 24:15 到站的最晚出發時間會得到 23:50，若到站期限提前一秒則無車可達。
+
+異動 JSON 以 `trip_id` 對應同一服務日的班表。一班車可標記 `cancelled: true`，或以非負整數 `delay_seconds` 延後整班。也可依停靠序號給定 `stop_delays`，自該站開始以新延誤秒數調整抵達與出發，直到下一個有指定的停靠站。延誤可減少，但每站抵達必須仍晚於或等於前站出發。停駛班次不參與查詢，站名仍可查詢。相同參數可用在 `dock_trip.py` 的單車接駁正查及到站期限查詢。[範例異動資料](examples/night-disruption.json) · [作品站與端對端測試共用的四組查詢結果](examples/transfer-demo.json)
+
 ## 先還共享單車，再搭夜班車
 
 從同一個騎車起點出發，最近的渡口站距離約 78 公尺，市場站約 156 公尺。23:54 從起點出發，市場站雖然較遠，還車後走到月台剛好趕上 00:05 快車，比在渡口站還車提早 11 分鐘抵達。使用 Python 3.12 和 .NET 10 SDK，從本專案目錄執行以下指令。

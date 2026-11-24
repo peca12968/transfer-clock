@@ -1,0 +1,10 @@
+{
+  "trips": [
+    {"trip_id": "local", "stop_delays": [
+      {"stop_sequence": 20, "delay_seconds": 180},
+      {"stop_sequence": 30, "delay_seconds": 120}
+    ]},
+    {"trip_id": "express", "delay_seconds": 180},
+    {"trip_id": "shuttle", "cancelled": true}
+  ]
+}
