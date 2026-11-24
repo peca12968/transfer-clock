@@ -1,0 +1,13 @@
+{
+  "stations": [
+    {"id": "plaza", "latitude": 25.0501, "longitude": 121.5100, "freeDocks": 0},
+    {"id": "ferry", "latitude": 25.0507, "longitude": 121.5100, "freeDocks": 1},
+    {"id": "market", "latitude": 25.0514, "longitude": 121.5100, "freeDocks": 3},
+    {"id": "park", "latitude": 25.0500, "longitude": 121.5120, "freeDocks": 2}
+  ],
+  "queries": [
+    {"latitude": 25.0500, "longitude": 121.5100, "needed": 1, "limit": 2},
+    {"latitude": 25.0500, "longitude": 121.5100, "needed": 2, "limit": 2, "maxMeters": 180},
+    {"latitude": 25.0500, "longitude": 121.5100, "needed": 4, "limit": 2}
+  ]
+}

@@ -1,0 +1,76 @@
+name: Verify transfer-clock system
+'on':
+- push
+- pull_request
+permissions:
+  contents: read
+jobs:
+  route:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+        - ubuntu-latest
+        - windows-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.12'
+    - run: python -m unittest -v
+    - run: python router.py examples/night.csv Studio Depot 23:49:00
+    - uses: actions/checkout@v7
+      with:
+        ref: a3d78f802b898eb6751a75ea5bb15a7b629648ff
+        path: radius-checkout
+        persist-credentials: false
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+    - run: dotnet build radius-checkout/ReturnRadius.csproj -c Release
+    - run: python dock_checks.py --radius-dll radius-checkout/bin/Release/net10.0/ReturnRadius.dll
+  return-radius-search:
+    strategy:
+      matrix:
+        os:
+        - ubuntu-latest
+        - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.12'
+    - run: dotnet build -c Release
+    - run: python test_search.py
+    - run: dotnet bin/Release/net10.0/ReturnRadius.dll examples/riverside.json
+    - uses: actions/checkout@v7
+      with:
+        ref: 4d272a2ac74b37c777794bd418a8c9a3cb1ad9bc
+        path: modules/return-radius/tile-satchel
+    - run: python -m pip install -r tile-satchel/requirements.txt
+    - run: python offline_demo.py tile-satchel
+    defaults:
+      run:
+        working-directory: modules/return-radius
+  tile-satchel-verify:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+        - ubuntu-latest
+        - windows-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.12'
+    - run: python -m pip install -r requirements.txt
+    - run: python -m unittest -v
+    - run: python demo.py
+    defaults:
+      run:
+        working-directory: modules/tile-satchel

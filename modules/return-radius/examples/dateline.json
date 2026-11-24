@@ -1,0 +1,11 @@
+{
+  "stations": [
+    {"id":"pier","latitude":0.002,"longitude":179.998,"freeDocks":2},
+    {"id":"island","latitude":-0.002,"longitude":-179.997,"freeDocks":3},
+    {"id":"full","latitude":0,"longitude":0,"freeDocks":0}
+  ],
+  "queries": [
+    {"latitude":0.002,"longitude":179.997,"needed":2,"limit":4,"maxMeters":1000,
+     "offlineMap":{"maxZoom":19,"tileBudget":4}}
+  ]
+}

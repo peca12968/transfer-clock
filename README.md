@@ -41,7 +41,7 @@ python router.py examples/night.csv Studio Depot 24:22:59 --arrive-by
 從同一個騎車起點出發，最近的渡口站距離約 78 公尺，市場站約 156 公尺。23:54 從起點出發，市場站雖然較遠，還車後走到月台剛好趕上 00:05 快車，比在渡口站還車提早 11 分鐘抵達。使用 Python 3.12 和 .NET 10 SDK，從本專案目錄執行以下指令。
 
 ```sh
-git clone https://github.com/peca12968/return-radius.git ../return-radius
+git clone https://github.com/peca12968/transfer-clock.git ../return-radius
 git -C ../return-radius checkout --detach a3d78f802b898eb6751a75ea5bb15a7b629648ff
 dotnet build ../return-radius/ReturnRadius.csproj -c Release
 python dock_trip.py examples/night.csv examples/dock-night.json Depot 23:54:00 --max-meters 180
@@ -56,7 +56,7 @@ python dock_checks.py
 | 改為 23:54:01 出發 | 市場站，改搭 shuttle，渡口站已無可行班次 | 23:54:01 | 24:23:00 |
 | 兩人同站還車，24:23 前抵達 | 市場站，搭 shuttle | 最晚 23:58:00 | 24:23:00 |
 
-Return Radius 先以球面距離及空位查出半徑內的全部合格站點。每個站在輸入快照指定對應的上車站、從起點實際騎行的秒數 `rideSeconds`，以及停車、還車和走到上車站的合計秒數 `returnAndWalkSeconds`。空位使用快照當下的讀數，騎行與步行時間由呼叫端提供。[站點快照](examples/dock-night.json) · [Return Radius 固定版本](https://github.com/peca12968/return-radius/tree/a3d78f802b898eb6751a75ea5bb15a7b629648ff)
+Return Radius 先以球面距離及空位查出半徑內的全部合格站點。每個站在輸入快照指定對應的上車站、從起點實際騎行的秒數 `rideSeconds`，以及停車、還車和走到上車站的合計秒數 `returnAndWalkSeconds`。空位使用快照當下的讀數，騎行與步行時間由呼叫端提供。[站點快照](examples/dock-night.json) · [Return Radius 固定版本](https://github.com/peca12968/transfer-clock/tree/a3d78f802b898eb6751a75ea5bb15a7b629648ff)
 
 正查從騎車出發時間加上兩段耗時，再向班表查詢。反查從最晚可上車時間扣除兩段耗時，取得最晚能從騎車起點出發的時間。輸出列出起點出發、到還車站、抵達上車站、最終到站時間與搭乘班次。每個還車站保留原路由器依轉乘次數提供的行程。跨站排序優先採最早抵達或最晚出發，同分依轉乘次數、距離與站點 ID 排序。若還車站旁就是目的站，可在還車步行後直接抵達。
 
@@ -77,3 +77,5 @@ Return Radius 先以球面距離及空位查出半徑內的全部合格站點。
 反查時，工具將每班車的停靠順序與時間軸反轉，並對調到站、離站與上下車權限。共用的班表掃描完成後，再將路段還原成旅客實際乘車的順序。相同的 300 份班表也各做一次反查，測試從起點向前窮舉全部合法乘車組合，核對最晚出發時間、到站期限以及每段轉乘是否可行。
 
 本作品使用 AI 輔助開發。所有站名與班次均為合成示範資料。
+
+[同庫模組與整合測試](modules/README.md)
