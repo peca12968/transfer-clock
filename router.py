@@ -229,16 +229,26 @@ def earliest_labels(trips, origin, destination, start, change_seconds, max_trans
     ) if destination in labels]
 
 
-def connection_details(legs, transfers, change_seconds):
+def buffered_transfers(default, transfers, buffer):
+    if type(buffer) is not int or buffer < 0:
+        raise ValueError("transfer buffer must be a nonnegative integer")
+    if not buffer:
+        return default, transfers
+    return (None if default is None else default + buffer,
+            {pair: None if minimum is None else minimum + buffer for pair, minimum in transfers.items()})
+
+
+def connection_details(legs, transfers, change_seconds, transfer_buffer=0):
     connections = []
     for before, after in zip(legs, legs[1:]):
         origin, destination = before.destination, after.origin
         pair = origin, destination
         minimum = transfers.get(pair, change_seconds) if origin == destination else transfers[pair]
-        ready = before.arrival + minimum
+        ready = before.arrival + minimum + transfer_buffer
         connections.append({"from_stop": origin, "to_stop": destination,
                             "arrival": clock(before.arrival), "ready": clock(ready), "departure": clock(after.departure),
-                            "minimum_seconds": minimum, "slack_seconds": after.departure - ready})
+                            "minimum_seconds": minimum, "slack_seconds": after.departure - ready,
+                            **({"buffer_seconds": transfer_buffer} if transfer_buffer else {})})
     return connections
 
 
@@ -251,25 +261,25 @@ def reverse_timetable(trips, transfers, time):
     return reversed_trips, reversed_transfers, horizon
 
 
-def plan(trips, origin, destination, start, change_seconds, max_transfers, *, arrive_by=False):
+def plan(trips, origin, destination, start, change_seconds, max_transfers, *, arrive_by=False, transfer_buffer=0):
     if min(start, change_seconds, max_transfers) < 0:
         raise ValueError("time, transfer allowance and transfer limit must be nonnegative")
     table = trips if isinstance(trips, Timetable) else timetable(trips)
     if origin not in table.stops or destination not in table.stops:
         raise ValueError("unknown origin or destination")
-    default_change = change_seconds
+    default_change = change_seconds if table.step_free_stops is None else None
+    rules = table.transfers or {}
+    required, transfers = buffered_transfers(default_change, rules, transfer_buffer)
     if table.step_free_stops is not None:
         if origin not in table.step_free_stops or destination not in table.step_free_stops:
             return []
-        default_change = None
     trips = table.trips
-    transfers = table.transfers or {}
     if arrive_by:
         trips, transfers, horizon = reverse_timetable(trips, transfers, start)
         origin, destination = destination, origin
         start = horizon - start
     results = []
-    for label in earliest_labels(trips, origin, destination, start, default_change, max_transfers, transfers):
+    for label in earliest_labels(trips, origin, destination, start, required, max_transfers, transfers):
         legs = label.legs()
         if arrive_by:
             legs = [leg.reversed_at(horizon) for leg in reversed(legs)]
@@ -279,8 +289,8 @@ def plan(trips, origin, destination, start, change_seconds, max_transfers, *, ar
         else:
             times = {"arrival": clock(label.time)}
         journey = {**times, "transfers": max(0, len(legs)-1), "legs": [leg.record() for leg in legs]}
-        if table.transfers is not None:
-            journey["connections"] = connection_details(legs, table.transfers, default_change)
+        if table.transfers is not None or transfer_buffer:
+            journey["connections"] = connection_details(legs, rules, default_change, transfer_buffer)
         results.append(journey)
     return results
 
@@ -296,12 +306,14 @@ def main():
     parser.add_argument("--transfer-rules", type=Path, help="load directional connections and minimum transfer times")
     parser.add_argument("--step-free", type=Path, help="require confirmed step-free trips, stops and directional transfers")
     parser.add_argument("--change-seconds", type=int, default=120)
+    parser.add_argument("--transfer-buffer-seconds", type=int, default=0, help="add time to each permitted transfer")
     parser.add_argument("--max-transfers", type=int, default=2)
     args = parser.parse_args()
     try:
         trips = timetable(read_calls(args.stop_times), args.service_updates, args.transfer_rules, step_free=args.step_free)
         journeys = plan(trips, args.origin, args.destination, seconds(args.time),
-                        args.change_seconds, args.max_transfers, arrive_by=args.arrive_by)
+                        args.change_seconds, args.max_transfers, arrive_by=args.arrive_by,
+                        transfer_buffer=args.transfer_buffer_seconds)
     except (OSError, ValueError, csv.Error) as error:
         parser.exit(1, f"{parser.prog}: {error}\n")
     print(json.dumps({"journeys": journeys}, indent=2))

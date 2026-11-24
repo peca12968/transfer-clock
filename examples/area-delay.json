@@ -1,0 +1,6 @@
+{
+  "trips": [
+    {"trip_id": "direct", "cancelled": true},
+    {"trip_id": "express", "delay_seconds": 60}
+  ]
+}

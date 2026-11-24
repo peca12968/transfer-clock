@@ -73,6 +73,19 @@ class RouteTest(unittest.TestCase):
                 journeys = json.loads(command.stdout)["journeys"]
                 self.assertEqual([(j["transfers"], j["departure"], j["arrival"]) for j in journeys], expected)
 
+    def test_extra_buffer_preserves_stated_same_stop_minimum(self):
+        result = self.cli(EXAMPLE, "Studio", "Depot", "23:50:00", "--transfer-buffer-seconds", 1)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        direct, fallback = json.loads(result.stdout)["journeys"]
+        self.assertEqual(direct["connections"], [])
+        self.assertEqual((fallback["legs"][-1]["trip"], fallback["arrival"]), ("shuttle", "24:23:00"))
+        link, = fallback["connections"]
+        self.assertEqual((link["minimum_seconds"], link["buffer_seconds"]), (120, 1))
+        self.assertEqual(seconds(link["departure"]) - seconds(link["ready"]), link["slack_seconds"])
+        rejected = self.cli(EXAMPLE, "Studio", "Depot", "24:12:00", "--arrive-by", "--transfer-buffer-seconds", 1)
+        self.assertEqual(rejected.returncode, 0, rejected.stderr)
+        self.assertEqual(json.loads(rejected.stdout)["journeys"], [])
+
     def test_service_updates_replan_in_both_directions(self):
         args = ["--service-updates", DISRUPTION]
         forward = self.cli(EXAMPLE, "Studio", "Depot", "23:49:00", *args)

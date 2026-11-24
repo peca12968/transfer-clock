@@ -4,7 +4,7 @@ import csv
 import json
 from pathlib import Path
 
-from router import clock, connection_details, read_calls, reverse_timetable, scan_labels, seconds, timetable
+from router import buffered_transfers, clock, connection_details, read_calls, reverse_timetable, scan_labels, seconds, timetable
 from service_updates import unique_fields
 
 
@@ -36,14 +36,15 @@ def read_walks(path, table):
     return load("origin"), load("destination")
 
 
-def plan_area(table, access, egress, time, change_seconds, max_transfers, *, arrive_by=False):
+def plan_area(table, access, egress, time, change_seconds, max_transfers, *, arrive_by=False, transfer_buffer=0):
     if min(time, change_seconds, max_transfers) < 0:
         raise ValueError("time, transfer allowance and transfer limit must be nonnegative")
+    rules = table.transfers or {}
+    minimum = change_seconds if table.step_free_stops is None else None
+    required, links = buffered_transfers(minimum, rules, transfer_buffer)
     if not access or not egress:
         return []
     trips = table.trips
-    links = table.transfers or {}
-    minimum = change_seconds if table.step_free_stops is None else None
     start, boarding_walks, exit_walks = time, access, egress
     if arrive_by:
         trips, links, horizon = reverse_timetable(trips, links, time)
@@ -52,7 +53,7 @@ def plan_area(table, access, egress, time, change_seconds, max_transfers, *, arr
 
     results = []
     best = None
-    for labels in scan_labels(trips, starts, minimum, max_transfers, links):
+    for labels in scan_labels(trips, starts, required, max_transfers, links):
         target = min((stop for stop in labels if stop in exit_walks),
                      key=lambda stop: (labels[stop].time + exit_walks[stop], stop), default=None)
         if target is None:
@@ -74,7 +75,7 @@ def plan_area(table, access, egress, time, change_seconds, max_transfers, *, arr
             "access": {"stop": first.origin, "seconds": before, "ready_at": clock(departure + before)},
             "egress": {"stop": last.destination, "seconds": after, "leave_stop_at": clock(last.arrival)},
             "transfers": len(legs) - 1, "legs": [leg.record() for leg in legs],
-            "connections": connection_details(legs, table.transfers or {}, minimum),
+            "connections": connection_details(legs, rules, minimum, transfer_buffer),
         })
     return results
 
@@ -89,13 +90,14 @@ def main():
     parser.add_argument("--transfer-rules", type=Path)
     parser.add_argument("--step-free", type=Path)
     parser.add_argument("--change-seconds", type=int, default=120)
+    parser.add_argument("--transfer-buffer-seconds", type=int, default=0, help="add time to each permitted transfer")
     parser.add_argument("--max-transfers", type=int, default=2)
     args = parser.parse_args()
     try:
         table = timetable(read_calls(args.stop_times), args.service_updates, args.transfer_rules, step_free=args.step_free)
         access, egress = read_walks(args.walks, table)
         journeys = plan_area(table, access, egress, seconds(args.time), args.change_seconds, args.max_transfers,
-                             arrive_by=args.arrive_by)
+                             arrive_by=args.arrive_by, transfer_buffer=args.transfer_buffer_seconds)
     except (OSError, ValueError, csv.Error) as error:
         parser.exit(1, f"{parser.prog}: {error}\n")
     print(json.dumps({"journeys": journeys}, indent=2))

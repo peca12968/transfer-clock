@@ -100,6 +100,19 @@ python area_trip.py examples/area-night.csv examples/area-walks.json 24:15:00 --
 
 延誤、停駛和定向轉乘規則沿用原路由。使用 `--step-free` 時，每段首尾步行也須在設定檔明列 `step_free: true`，對應停靠點及車班仍須符合確認清單。範例未確認 Avenue 的起點步行，所以無階梯反查會改選 Studio。測試用 120 份合成班表窮舉正查與反查，並核對服務異動後的轉乘餘裕。[步行設定](examples/area-walks.json) · [四組實際輸出](examples/area-demo.json) · [端對端測試](test_area_trip.py)
 
+## 預留轉乘緩衝
+
+`router.py` 與 `area_trip.py` 都可加上 `--transfer-buffer-seconds`。以 60 秒為例，每次換車會在同站或跨月台的最低時間之外多留 60 秒。首段上車與直達行程照原本的步行時間和班表計算。已關閉的通道仍無法通行，無階梯路線仍須有確認的轉乘通道。
+
+```sh
+python area_trip.py examples/area-night.csv examples/area-walks.json 23:49:00 --transfer-rules examples/platform-transfer.json --transfer-buffer-seconds 60
+python area_trip.py examples/area-night.csv examples/area-walks.json 24:15:00 --transfer-rules examples/platform-transfer.json --service-updates examples/area-delay.json --arrive-by --transfer-buffer-seconds 60
+```
+
+一般班表的跨月台快車剛好只夠走 120 秒。多留 60 秒後，23:49 出發會改選 24:15 抵達的直達車。另一個案例停駛直達車並延後快車 60 秒，此時 24:15 的到站期限恰好容許 60 秒緩衝。再加一秒就沒有符合條件的行程。
+
+`connections` 保留既有的 `minimum_seconds`。指定正數緩衝時會另外回傳 `buffer_seconds`，`ready` 和 `slack_seconds` 則按步行與緩衝合計計算。[四種查詢的實際輸出](examples/buffer-demo.json) · [服務異動範例](examples/area-delay.json)
+
 ## 先還共享單車，再搭夜班車
 
 從同一個騎車起點出發，最近的渡口站距離約 78 公尺，市場站約 156 公尺。23:54 從起點出發，市場站雖然較遠，還車後走到月台剛好趕上 00:05 快車，比在渡口站還車提早 11 分鐘抵達。使用 Python 3.12 和 .NET 10 SDK，從本專案目錄執行以下指令。

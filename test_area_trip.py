@@ -16,6 +16,7 @@ TABLE = EXAMPLES / "area-night.csv"
 WALKS = EXAMPLES / "area-walks.json"
 LINKS = EXAMPLES / "platform-transfer.json"
 CONFIRMED = EXAMPLES / "area-step-free.json"
+DELAY = EXAMPLES / "area-delay.json"
 
 
 def cli(time, *, reverse=False, step_free=False, extra=()):
@@ -26,7 +27,7 @@ def cli(time, *, reverse=False, step_free=False, extra=()):
                            "--transfer-rules", LINKS, *flags, *extra], capture_output=True, text=True, timeout=15)
 
 
-def exhaustive(table, access, egress, time, minimum, limit, *, reverse):
+def exhaustive(table, access, egress, time, minimum, limit, *, reverse, buffer=0):
     """Enumerate forward rides even when verifying the latest departure."""
     choose = max if reverse else min
     scores = {}
@@ -44,6 +45,8 @@ def exhaustive(table, access, egress, time, minimum, limit, *, reverse):
                 gap = 0 if stop == board.stop else None
                 if rides:
                     gap = table.transfers.get((stop, board.stop), minimum if stop == board.stop else None)
+                    if gap is not None:
+                        gap += buffer
                 if not board.pickup or gap is None or board.departure < arrival + gap:
                     continue
                 departure = first_departure if rides else board.departure - access[stop]
@@ -85,14 +88,9 @@ class AreaTripTests(unittest.TestCase):
         self.assertEqual((journey["departure"], journey["arrival"]), ("00:00:00", "00:00:11"))
 
     def test_endpoint_walks_combine_with_delays_and_cancellation(self):
-        with TemporaryDirectory() as temp:
-            updates = Path(temp) / "updates.json"
-            updates.write_text(json.dumps({"trips": [
-                {"trip_id": "direct", "cancelled": True}, {"trip_id": "express", "delay_seconds": 60},
-            ]}), encoding="utf-8")
-            extra = ("--service-updates", updates)
-            too_early = cli("24:14:59", reverse=True, extra=extra)
-            on_time = cli("24:15:00", reverse=True, extra=extra)
+        extra = ("--service-updates", DELAY)
+        too_early = cli("24:14:59", reverse=True, extra=extra)
+        on_time = cli("24:15:00", reverse=True, extra=extra)
         self.assertEqual(too_early.returncode, 0, too_early.stderr)
         self.assertEqual(on_time.returncode, 0, on_time.stderr)
         self.assertEqual(json.loads(too_early.stdout)["journeys"], [])
@@ -100,6 +98,31 @@ class AreaTripTests(unittest.TestCase):
         self.assertEqual((journey["departure"], journey["arrival"]), ("23:49:00", "24:15:00"))
         self.assertEqual([leg["trip"] for leg in journey["legs"]], ["local", "express"])
         self.assertEqual(journey["connections"][0]["slack_seconds"], 60)
+
+    def test_published_buffer_cases_match_the_cli(self):
+        rows = json.loads((EXAMPLES / "buffer-demo.json").read_text(encoding="utf-8"))
+        self.assertEqual([r["scenario"] for r in rows], ["departure", "deadline", "delayed", "step_free"])
+        expected = [
+            [[(0, "24:15:00"), (1, "24:14:00")], [(0, "24:15:00")]],
+            [[(1, "24:14:00")], []],
+            [[(1, "24:15:00")], []],
+            [[(1, "24:14:00")], []],
+        ]
+        for row, expected_routes in zip(rows, expected):
+            for option, routes in zip(row["options"], expected_routes, strict=True):
+                with self.subTest(scenario=row["scenario"], buffer=option["buffer_seconds"]):
+                    flags = ("--service-updates", DELAY) if row["scenario"] == "delayed" else ()
+                    result = cli(row["time"], reverse=row["arrive_by"], step_free=row["step_free"],
+                                 extra=(*flags, "--transfer-buffer-seconds", str(option["buffer_seconds"])))
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    journeys = json.loads(result.stdout)["journeys"]
+                    self.assertEqual(journeys, option["journeys"])
+                    self.assertEqual([(r["transfers"], r["arrival"]) for r in journeys], routes)
+        exact = rows[2]["options"][0]["journeys"][0]["connections"][0]
+        self.assertEqual((exact["minimum_seconds"], exact["buffer_seconds"], exact["slack_seconds"]), (120, 60, 0))
+        rejected = cli("24:14:00", reverse=True, extra=("--transfer-buffer-seconds", "-1"))
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("nonnegative integer", rejected.stderr)
 
     def test_walk_validation_and_explicit_access_confirmation(self):
         table = timetable(read_calls(TABLE), step_free=CONFIRMED)
@@ -135,8 +158,10 @@ class AreaTripTests(unittest.TestCase):
             table = Timetable(trips, frozenset(stops), links)
             access = {stop: rng.randrange(12) for stop in rng.sample(stops, 2)}
             egress = {stop: rng.randrange(12) for stop in rng.sample(stops, 2)}
-            for reverse, time, field in ((False, 4, "arrival"), (True, 38, "departure")):
-                with self.subTest(example=example, reverse=reverse):
-                    actual = plan_area(table, access, egress, time, 3, 2, arrive_by=reverse)
-                    scores = [(route["transfers"], seconds(route[field])) for route in actual]
-                    self.assertEqual(scores, exhaustive(table, access, egress, time, 3, 2, reverse=reverse))
+            for buffer in (0, example % 7 + 1):
+                for reverse, time, field in ((False, 4, "arrival"), (True, 38, "departure")):
+                    with self.subTest(example=example, reverse=reverse, buffer=buffer):
+                        actual = plan_area(table, access, egress, time, 3, 2, arrive_by=reverse, transfer_buffer=buffer)
+                        scores = [(route["transfers"], seconds(route[field])) for route in actual]
+                        self.assertEqual(scores, exhaustive(table, access, egress, time, 3, 2,
+                                                            reverse=reverse, buffer=buffer))
